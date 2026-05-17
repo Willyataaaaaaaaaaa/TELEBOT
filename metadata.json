@@ -1,0 +1,6 @@
+{
+  "name": "Marketplace Telegram Bot",
+  "description": "Telegram bot for receiving sale offers, sending them to an admin for approval, and publishing them to a channel.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
