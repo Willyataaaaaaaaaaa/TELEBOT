@@ -1,1 +1,19 @@
 @import "tailwindcss";
+
+@keyframes shader-bg {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+.animated-shader {
+  background: linear-gradient(-45deg, #0a0a0a, #1a0b2e, #0f0518, #2d1145);
+  background-size: 400% 400%;
+  animation: shader-bg 15s ease infinite;
+}
