@@ -1,19 +1,28 @@
 @import "tailwindcss";
 
 @keyframes shader-bg {
-  0% {
-    background-position: 0% 50%;
-  }
-  50% {
-    background-position: 100% 50%;
-  }
-  100% {
-    background-position: 0% 50%;
-  }
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
 }
 
 .animated-shader {
-  background: linear-gradient(-45deg, #0a0a0a, #1a0b2e, #0f0518, #2d1145);
+  background: linear-gradient(-45deg, #090014, #1b0238, #0a0118, #2a0854);
   background-size: 400% 400%;
-  animation: shader-bg 15s ease infinite;
+  animation: shader-bg 20s ease infinite;
+}
+
+.pattern-grid-lg {
+  background-image: 
+    linear-gradient(to right, rgba(168, 85, 247, 0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(168, 85, 247, 0.05) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+.hidden-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.hidden-scrollbar {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
 }

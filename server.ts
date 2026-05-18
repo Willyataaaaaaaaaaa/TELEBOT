@@ -9,8 +9,9 @@ dotenv.config();
 
 // Custom Context with Session
 interface SessionData {
-  step?: 'IDLE' | 'AWAITING_PLATFORM' | 'AWAITING_PRICE' | 'AWAITING_INFO';
+  step?: 'IDLE' | 'AWAITING_PLATFORM' | 'AWAITING_GAME_NAME' | 'AWAITING_PRICE' | 'AWAITING_INFO';
   platform?: string;
+  gameName?: string;
   price?: string;
 }
 
@@ -20,13 +21,15 @@ interface MyContext extends Context {
 
 export interface Offer {
   id: string;
+  uniqueCode: string;
   userId: number;
   username: string;
   platform: string;
+  gameName?: string;
   price?: string;
+  content?: string;
   sourceChatId: number;
   sourceMessageId: number;
-  adminMessageId?: number;
   status: 'pending' | 'approved' | 'rejected';
   createdAt: Date;
 }
@@ -49,6 +52,8 @@ app.use(express.json());
 // ==========================================
 let botStatus = 'Stopped';
 let botInstance: Telegraf<MyContext> | null = null;
+
+const resolvedAdmins = new Map<string, number>();
 
 function setupBot() {
   let token = process.env.TELEGRAM_BOT_TOKEN;
@@ -101,7 +106,12 @@ function setupBot() {
       const isUserAdmin = (ctx.from?.id && adminIds.includes(ctx.from.id)) || 
                           (ctx.from?.username && adminIds.includes('@' + ctx.from.username)) ||
                           (ctx.chat?.id && adminIds.includes(ctx.chat.id));
-      if (isUserAdmin) return next();
+      if (isUserAdmin) {
+        if (ctx.from?.username && ctx.from?.id && adminIds.includes('@' + ctx.from.username)) {
+           resolvedAdmins.set('@' + ctx.from.username, ctx.from.id);
+        }
+        return next();
+      }
       
       if (!ctx.from) return next();
       
@@ -135,10 +145,26 @@ function setupBot() {
 
     // 3. Command: /start
     bot.start(async (ctx) => {
-      ctx.session.step = 'AWAITING_PLATFORM';
-      const welcomeText = `مرحباً بك في بوت العروض! 🌟\n\nيرجى كتابة نوع المنصة التي ترغب في بيع حسابك/غرضك فيها (مثال: انستقرام، تيك توك، إلخ):`;
-      await ctx.reply(welcomeText, { parse_mode: 'Markdown', ...Markup.removeKeyboard() });
+      ctx.session.step = 'IDLE';
+      const welcomeText = `مرحباً بك في بوت العروض! 🌟\n\nلتقديم عرض جديد للبيع، اضغط على زر "تقديم طلب جديد 📝" بالأسفل، أو أرسل الأمر /sell في أي وقت.`;
+      await ctx.reply(welcomeText, { 
+        parse_mode: 'Markdown',
+        reply_markup: {
+          keyboard: [[{ text: 'تقديم طلب جديد 📝' }]],
+          resize_keyboard: true,
+          persistent: true
+        }
+      });
     });
+
+    const startOfferFlow = async (ctx: any) => {
+      ctx.session.step = 'AWAITING_PLATFORM';
+      const promptText = `يرجى كتابة اسم المنصة اللي بيها الحساب (مثال: pc / xbox / mobile):`;
+      await ctx.reply(promptText, { parse_mode: 'Markdown', reply_markup: { remove_keyboard: true } });
+    };
+
+    bot.command('sell', startOfferFlow);
+    bot.hears('تقديم طلب جديد 📝', startOfferFlow);
 
     // 5. Handle Text and Offers
     bot.on(['text', 'photo', 'video', 'document'], async (ctx, next) => {
@@ -151,6 +177,9 @@ function setupBot() {
           if (botInfo) {
             const isUserAdmin = (ctx.from?.id && adminIds.includes(ctx.from.id)) || 
                                 (ctx.from?.username && adminIds.includes('@' + ctx.from.username));
+            if (isUserAdmin && ctx.from?.username && ctx.from?.id && adminIds.includes('@' + ctx.from.username)) {
+               resolvedAdmins.set('@' + ctx.from.username, ctx.from.id);
+            }
             const isMentioned = text.includes(`@${botInfo.username}`);
             const isStartCommand = text.startsWith('/start') || text.startsWith('/sell');
 
@@ -183,9 +212,19 @@ function setupBot() {
       if (ctx.session?.step === 'AWAITING_PLATFORM') {
         if (ctx.message && 'text' in ctx.message && !ctx.message.text.startsWith('/')) {
           ctx.session.platform = ctx.message.text;
+          ctx.session.step = 'AWAITING_GAME_NAME';
+          await ctx.reply(
+            `✅ لقد اخترت: ${ctx.message.text}\n\nالآن، يرجى كتابة اسم اللعبة أو الحساب (مثال: ببجي، يوزر ثلاثي انستا):`
+          );
+        } else {
+          return next();
+        }
+      } else if (ctx.session?.step === 'AWAITING_GAME_NAME') {
+        if (ctx.message && 'text' in ctx.message && !ctx.message.text.startsWith('/')) {
+          ctx.session.gameName = ctx.message.text;
           ctx.session.step = 'AWAITING_PRICE';
           await ctx.reply(
-            `✅ لقد اخترت: ${ctx.message.text}\n\nالآن، يرجى كتابة السعر المقترح للبيع (مثال: 50$ أو 200 ريال):`
+            `✅ اسم اللعبة/الحساب: ${ctx.message.text}\n\nالآن، يرجى كتابة السعر المقترح للبيع (مثال: 50$ أو 250 ألف دينار عراقي):`
           );
         } else {
           return next();
@@ -202,18 +241,32 @@ function setupBot() {
         }
       } else if (ctx.session?.step === 'AWAITING_INFO') {
         const platform = ctx.session.platform || 'غير محدد';
+        const gameName = ctx.session.gameName || 'غير محدد';
         const price = ctx.session.price || 'غير محدد';
         
         try {
           const originalMsgId = ctx.message.message_id;
           const offerId = `${ctx.chat.id}_${originalMsgId}`;
+          const uniqueCode = `OFR-${Math.floor(100000 + Math.random() * 900000)}`;
+          
+          let contentStr = '';
+          if (ctx.message && 'text' in ctx.message) {
+            contentStr = ctx.message.text;
+          } else if (ctx.message && 'caption' in ctx.message && typeof ctx.message.caption === 'string') {
+            contentStr = ctx.message.caption;
+          } else {
+            contentStr = 'بدون نص إضافي (مرفق فقط)';
+          }
           
           const newOffer: Offer = {
             id: offerId,
+            uniqueCode: uniqueCode,
             userId: ctx.from.id,
             username: ctx.from.username ? '@' + ctx.from.username : (ctx.from.first_name || 'بدون يوزر'),
             platform: platform,
+            gameName: gameName,
             price: price,
+            content: contentStr,
             sourceChatId: ctx.chat.id,
             sourceMessageId: originalMsgId,
             status: 'pending',
@@ -223,58 +276,20 @@ function setupBot() {
           offersData.unshift(newOffer);
 
           try {
-            const senderName = ctx.from.username ? '@' + ctx.from.username : (ctx.from.first_name || 'بدون يوزر');
-            const safeSenderName = senderName.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-            const adminText = `📩 عرض جديد للبيع!\n👤 المُرسل: ${safeSenderName}\n🔗 الحساب: <a href="tg://user?id=${ctx.from.id}">البدء بالمحادثة</a>\n🏷️ المنصة: ${platform}\n💰 السعر المقترح: ${price}\n\nاختر الإجراء المناسب:`;
-
-            for (const currentAdminId of adminIds) {
-              try {
-                // First, copy the exact user message to the admin
-                const copiedMsg = await ctx.telegram.copyMessage(currentAdminId, ctx.chat.id, originalMsgId);
-                
-                // Then, send the action buttons tied to the copied message
-                const actionMsg = await ctx.telegram.sendMessage(
-                  currentAdminId,
-                  adminText,
-                  {
-                    parse_mode: 'HTML',
-                    reply_parameters: { message_id: copiedMsg.message_id },
-                    reply_markup: {
-                      inline_keyboard: [
-                        [
-                          { text: '✅ موافقة ونشر', callback_data: `approve_${ctx.chat.id}_${originalMsgId}` },
-                          { text: '❌ رفض', callback_data: `reject_${ctx.chat.id}_${originalMsgId}` }
-                        ]
-                      ]
-                    }
-                  }
-                );
-                // Save the last admin message ID for cleanup purposes
-                newOffer.adminMessageId = actionMsg.message_id;
-              } catch (innerError: any) {
-                console.error(`Error forwarding to admin ${currentAdminId}:`, innerError);
-                if (innerError.message && innerError.message.includes('chat not found') && typeof currentAdminId === 'string') {
-                   await ctx.reply(`⚠️ ملاحظة: لم يتم إرسال العرض للأدمن (${currentAdminId}) لأنه يجب استخدام الآيدي الرقمي في الإعدادات بدلاً من اليوزر.`);
-                }
+            // Tell the user
+            ctx.session.step = 'IDLE';
+            await ctx.reply(`✅ تم إرسال معلوماتك بنجاح إلى الإدارة للمراجعة.\n\nكود طلبك: \`${uniqueCode}\`\n\nيرجى الانتظار، سيصلك إشعار عند الموافقة.`, {
+              parse_mode: 'Markdown',
+              reply_markup: {
+                inline_keyboard: [
+                  [{ text: 'تقديم عرض جديد', callback_data: 'new_offer' }]
+                ]
               }
-            }
-          } catch (error: any) {
-            console.error("Error forwarding to admin:", error);
-            if (error.message && error.message.includes('chat not found')) {
-               console.warn("Could not reach admin in Telegram. Offer is still saved to Web Dashboard.");
-               await ctx.reply("ℹ️ تم حفظ عرضك في السيرفر الخاص للإدارة (عبر لوحة التحكم)، سيتم نشر عرضك عند الموافقة عليه.");
-               ctx.session.step = 'IDLE';
-               return;
-            }
+            });
+          } catch (globalError: any) {
+            console.error("Global error handling offer:", globalError);
+            await ctx.reply("❌ حدث خطأ غير متوقع أثناء معالجة العرض.");
           }
-
-          // Tell the user
-          ctx.session.step = 'IDLE';
-          await ctx.reply('✅ تم إرسال معلوماتك بنجاح إلى الإدارة للمراجعة. يرجى الانتظار، سيصلك إشعار عند الموافقة ونشر العرض.',
-            Markup.inlineKeyboard([
-               [Markup.button.callback('تقديم عرض جديد', 'new_offer')]
-            ])
-          );
         } catch (globalError: any) {
           console.error("Global error handling offer:", globalError);
           await ctx.reply("❌ حدث خطأ غير متوقع أثناء معالجة العرض.");
@@ -282,106 +297,18 @@ function setupBot() {
       } else {
         // Not awaiting info
         if (ctx.message && 'text' in ctx.message && !ctx.message.text.startsWith('/')) {
-           await ctx.reply('يرجى الضغط على /start للبدء وتقديم عرض جديد.');
+           if (ctx.message.text === 'تقديم طلب جديد 📝') return next();
+           await startOfferFlow(ctx);
         }
       }
     });
     
     bot.action('new_offer', async (ctx) => {
       if (ctx.session) ctx.session.step = 'AWAITING_PLATFORM';
-      await ctx.editMessageText('مرحباً بك مجدداً! يرجى كتابة نوع المنصة التي ترغب في بيع حسابك/غرضك فيها:');
-    });
-
-    // 6. Handle Admin Actions
-    // Admin clicks Approve
-    bot.action(/approve_(-?\d+)_(\d+)/, async (ctx) => {
-      const sourceChatId = Number(ctx.match[1]);
-      const sourceMessageId = Number(ctx.match[2]);
-      const offerId = `${sourceChatId}_${sourceMessageId}`;
-      const offer = offersData.find(o => o.id === offerId);
-      
-      if (!offer) {
-        return ctx.answerCbQuery("❌ هذا العرض غير موجود أو محذوف.");
-      }
-      
-      if (offer.status !== 'pending') {
-        // Just hide the keyboard
-        try {
-          await ctx.editMessageReplyMarkup({ inline_keyboard: [] });
-        } catch(e){}
-        return ctx.answerCbQuery("❌ تم معالجة هذا العرض مسبقاً.");
-      }
-      
       try {
-        // Publish to channel using the ORIGINAL message from the user
-        const pubMsg = await ctx.telegram.copyMessage(targetChannel, sourceChatId, sourceMessageId);
-        
-        // Send broker note along with platform and price
-        try {
-          const infoMessage = `🏷️ المنصة: ${offer.platform}\n💰 السعر المقترح: ${offer.price || 'غير محدد'}\n\n⚠️ ملاحظة: نحن نعمل كـ وسيط فقط بين البائع والمشتري.`;
-          await ctx.telegram.sendMessage(targetChannel, infoMessage, { reply_parameters: { message_id: pubMsg.message_id } });
-        } catch (e) {
-           console.error("Broker notice error:", e);
-        }
-
-        // Build the link
-        let publicLink = '';
-        if (targetChannel.startsWith('@')) {
-          const channelName = targetChannel.replace('@', '');
-          publicLink = `https://t.me/${channelName}/${pubMsg.message_id}`;
-        } else {
-          // It's a private group/channel ID, e.g. -1001234567890
-          const cleanId = targetChannel.toString().replace('-100', '');
-          publicLink = `https://t.me/c/${cleanId}/${pubMsg.message_id}`;
-        }
-        
-        // Notify the user
-        try {
-          await ctx.telegram.sendMessage(sourceChatId, `🎉 مبروك! تمت الموافقة على عرضك وتم نشره في القناة.\n\nشاهد عرضك من هنا: ${publicLink}`);
-        } catch(e){} // Ignore if user blocked bot
-        
-        // Update admin UI
-        await ctx.editMessageText(`✅ تمت الموافقة والنشر في القناة.\n\nالرابط: ${publicLink}`);
-        
-        if (offer) offer.status = 'approved';
-      } catch (err) {
-        console.error("Error approving:", err);
-        await ctx.answerCbQuery("❌ حدث خطأ أثناء النشر! تأكد من أن البوت مشرف في القناة.");
-      }
-    });
-
-    // Admin clicks Reject
-    bot.action(/reject_(-?\d+)_(\d+)/, async (ctx) => {
-      const sourceChatId = Number(ctx.match[1]);
-      const sourceMessageId = Number(ctx.match[2]);
-      const offerId = `${sourceChatId}_${sourceMessageId}`;
-      const offer = offersData.find(o => o.id === offerId);
-      
-      if (!offer) {
-        return ctx.answerCbQuery("❌ هذا العرض غير موجود أو محذوف.");
-      }
-      
-      if (offer.status !== 'pending') {
-        try {
-          await ctx.editMessageReplyMarkup({ inline_keyboard: [] });
-        } catch(e){}
-        return ctx.answerCbQuery("❌ تم معالجة هذا العرض مسبقاً.");
-      }
-      
-      try {
-        // Notify user
-        try {
-          await ctx.telegram.sendMessage(sourceChatId, `❌ نعتذر، تم مراجعة عرضك ورفضه من قبل الإدارة.`);
-        } catch (e) {}
-        
-        // Update admin UI
-        await ctx.editMessageText(`❌ تم رفض العرض.`);
-        
-        if (offer) offer.status = 'rejected';
-      } catch (err) {
-        console.error("Error rejecting:", err);
-        await ctx.answerCbQuery("❌ حدث خطأ!");
-      }
+        await ctx.answerCbQuery('🔔 اكتب اسم المنصه الي بيها الحساب pc/xbox/mobile', { show_alert: true });
+      } catch (e) {}
+      await ctx.editMessageText('مرحباً بك مجدداً! يرجى كتابة اسم المنصة الي بيها الحساب (مثال: pc / xbox / mobile):');
     });
 
     // Catch all errors inside bot
@@ -419,6 +346,21 @@ async function startServer() {
     res.json(offersData);
   });
 
+  app.post('/api/offers/:id/update', (req, res) => {
+    const offer = offersData.find(o => o.id === req.params.id);
+    if (!offer) return res.status(404).json({ error: 'Not found' });
+    if (offer.status !== 'pending') return res.status(400).json({ error: 'Offer already processed' });
+    
+    // Update fields
+    const { platform, gameName, price, content } = req.body;
+    if (platform !== undefined) offer.platform = platform;
+    if (gameName !== undefined) offer.gameName = gameName;
+    if (price !== undefined) offer.price = price;
+    if (content !== undefined) offer.content = content;
+
+    res.json(offer);
+  });
+
   app.post('/api/offers/:id/approve', async (req, res) => {
     const offer = offersData.find(o => o.id === req.params.id);
     if (!offer) return res.status(404).json({ error: 'Not found' });
@@ -432,7 +374,7 @@ async function startServer() {
       
       // Send broker note along with platform and price
       try {
-        const infoMessage = `🏷️ المنصة: ${offer.platform}\n💰 السعر المقترح: ${offer.price || 'غير محدد'}\n\n⚠️ ملاحظة: نحن نعمل كـ وسيط فقط بين البائع والمشتري.`;
+        const infoMessage = `🏷️ المنصة: ${offer.platform}\n🎮 اللعبة/الحساب: ${offer.gameName || 'غير محدد'}\n💰 السعر المقترح: ${offer.price || 'غير محدد'}\n\n⚠️ ملاحظة: نحن نعمل كـ وسيط فقط بين البائع والمشتري.`;
         await botInstance.telegram.sendMessage(targetChannel, infoMessage, { reply_parameters: { message_id: pubMsg.message_id } });
       } catch (e) {
          console.error("Broker notice error:", e);
@@ -452,20 +394,6 @@ async function startServer() {
       offer.status = 'approved';
       res.json({ success: true, link: publicLink });
 
-      // Clean up inline keyboard in admin chat if it exists
-      if (offer.adminMessageId && process.env.TELEGRAM_ADMIN_ID) {
-        const _adminIds: (string|number)[] = process.env.TELEGRAM_ADMIN_ID.split(',').map(s => {
-          const val = s.trim();
-          if (/^-?\d+$/.test(val)) return parseInt(val, 10);
-          return val.startsWith('@') ? val : '@' + val;
-        });
-        for (const _adminId of _adminIds) {
-          try {
-            await botInstance.telegram.editMessageReplyMarkup(_adminId, offer.adminMessageId, undefined, { inline_keyboard: [] });
-          } catch(e) {}
-        }
-      }
-
     } catch (err: any) {
       console.error(err);
       res.status(500).json({ error: err.message });
@@ -473,6 +401,7 @@ async function startServer() {
   });
 
   app.post('/api/offers/:id/reject', async (req, res) => {
+    const { reason } = req.body || {};
     const offer = offersData.find(o => o.id === req.params.id);
     if (!offer) return res.status(404).json({ error: 'Not found' });
     if (offer.status !== 'pending') return res.status(400).json({ error: 'Offer already processed' });
@@ -480,22 +409,14 @@ async function startServer() {
     if (!botInstance) return res.status(500).json({ error: 'Bot offline' });
 
     try {
-      await botInstance.telegram.sendMessage(offer.userId, `❌ نعتذر، تم مراجعة عرضك ورفضه من قبل الإدارة عبر لوحة التحكم.`);
+      let rejectMessage = `❌ نعتذر، تم مراجعة عرضك ورفضه من قبل الإدارة.`;
+      if (reason && reason.trim() !== '') {
+        rejectMessage += `\nالسبب: ${reason}`;
+        (offer as any).rejectReason = reason;
+      }
+      await botInstance.telegram.sendMessage(offer.userId, rejectMessage);
       offer.status = 'rejected';
       res.json({ success: true });
-
-      if (offer.adminMessageId && process.env.TELEGRAM_ADMIN_ID) {
-        const _adminIds: (string|number)[] = process.env.TELEGRAM_ADMIN_ID.split(',').map(s => {
-          const val = s.trim();
-          if (/^-?\d+$/.test(val)) return parseInt(val, 10);
-          return val.startsWith('@') ? val : '@' + val;
-        });
-        for (const _adminId of _adminIds) {
-          try {
-            await botInstance.telegram.editMessageReplyMarkup(_adminId, offer.adminMessageId, undefined, { inline_keyboard: [] });
-          } catch(e) {}
-        }
-      }
 
     } catch (err: any) {
       console.error(err);
