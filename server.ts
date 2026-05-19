@@ -1,7 +1,6 @@
 import express from 'express';
 import compression from 'compression';
 import path from 'path';
-import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
 import { Telegraf, session, Markup, Context } from 'telegraf';
 import dotenv from 'dotenv';
@@ -39,9 +38,7 @@ export interface Offer {
 export const offersData: Offer[] = [];
 export let targetChannel = '';
 
-// Ensure ES module directory variables
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+// ES module directory variables not needed as we use process.cwd()
 
 const app = express();
 const PORT = 3000;
@@ -366,7 +363,9 @@ function setupBot() {
     });
 
     // Launch bot
-    bot.launch();
+    bot.launch({ dropPendingUpdates: true }).catch((err) => {
+      console.error("Bot launch failed:", err.message);
+    });
     console.log("Telegram Bot started!");
     
     // Enable graceful stop
