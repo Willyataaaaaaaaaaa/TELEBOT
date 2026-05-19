@@ -94,7 +94,7 @@ export default function App() {
         alert('خطأ أثناء الموافقة: ' + error.error);
         return;
       }
-      setOffers(offers.map(o => o.id === id ? { ...o, status: 'approved' } : o));
+      setOffers(prev => prev.map(o => o.id === id ? { ...o, status: 'approved' } : o));
       showToast('تم النشر في القناة بنجاح ✨');
     } catch (e) {
       alert('حدث خطأ بالاتصال بالسيرفر');
@@ -124,7 +124,7 @@ export default function App() {
         alert('خطأ أثناء الرفض: ' + error.error);
         return;
       }
-      setOffers(offers.map(o => o.id === id ? { ...o, status: 'rejected', rejectReason: rejectReason } : o));
+      setOffers(prev => prev.map(o => o.id === id ? { ...o, status: 'rejected', rejectReason: rejectReason } : o));
       showToast('تم رفض العرض ❌');
       setRejectingId(null);
     } catch (e) {
@@ -160,7 +160,7 @@ export default function App() {
         return;
       }
       const updatedOffer = await res.json();
-      setOffers(offers.map(o => o.id === id ? updatedOffer : o));
+      setOffers(prev => prev.map(o => o.id === id ? updatedOffer : o));
       showToast('تم تحديث العرض بنجاح 📝');
       setEditingId(null);
     } catch (e) {
@@ -360,7 +360,7 @@ export default function App() {
           ) : (
             <motion.div layout className="space-y-4">
               <AnimatePresence mode="popLayout">
-              {displayedOffers.map((offer, index) => (
+              {displayedOffers.map((offer) => (
                 <motion.div 
                   layout
                   initial={{ opacity: 0, scale: 0.95, y: 20 }}
