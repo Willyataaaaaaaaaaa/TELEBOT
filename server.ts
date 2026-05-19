@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
 import { Telegraf, session, Markup, Context } from 'telegraf';
 import dotenv from 'dotenv';
+import { encryptPayload, decryptPayload } from './src/crypto';
 
 dotenv.config();
 
@@ -50,6 +51,32 @@ app.use(compression());
 
 // Middleware for parsing JSON requests in Express
 app.use(express.json());
+
+// Encryption Middleware for End-to-End Payload Encryption
+app.use((req, res, next) => {
+  // Ignore Telegram webhooks or non-API routes if needed, but here we'll just check if there's a payload.
+  if (req.body && req.body.payload) {
+    const decrypted = decryptPayload(req.body.payload);
+    if (decrypted) {
+      req.body = decrypted;
+    }
+  }
+
+  // Intercept res.json to encrypt responses for /api/ routes
+  if (req.path.startsWith('/api/')) {
+    const originalJson = res.json.bind(res);
+    res.json = (body: any) => {
+      // Only encrypt if it's not already encrypted and is an object
+      if (body && typeof body === 'object' && !body.payload) {
+        const encrypted = encryptPayload(body);
+        return originalJson({ payload: encrypted });
+      }
+      return originalJson(body);
+    };
+  }
+  
+  next();
+});
 
 // ==========================================
 // TELEGRAM BOT SETUP

@@ -1,6 +1,34 @@
 import React, { useEffect, useState } from 'react';
 import { ShieldAlert, Bot, CheckCircle2, AlertCircle, Clock, Check, X, Edit, History, InboxIcon, Save } from 'lucide-react';
 import { motion, AnimatePresence, useMotionValue, useSpring, useTransform } from 'motion/react';
+import { encryptPayload, decryptPayload } from './crypto';
+
+// Custom secure fetch utility
+const secureFetch = async (url: string, options: RequestInit = {}) => {
+  const reqOptions = { ...options };
+  
+  // Encrypt body if it exists
+  if (reqOptions.body && typeof reqOptions.body === 'string') {
+    try {
+      const parsed = JSON.parse(reqOptions.body);
+      reqOptions.body = JSON.stringify({ payload: encryptPayload(parsed) });
+    } catch(e) {}
+  }
+  
+  const res = await fetch(url, reqOptions);
+  
+  // Intercept the json() method of the response
+  const originalJson = res.json.bind(res);
+  res.json = async () => {
+    const data = await originalJson();
+    if (data && data.payload) {
+      return decryptPayload(data.payload);
+    }
+    return data;
+  };
+  
+  return res;
+};
 
 export default function App() {
   const [botStatus, setBotStatus] = useState<string>('Loading...');
@@ -41,11 +69,11 @@ export default function App() {
     const start = Date.now();
     const fetchData = async () => {
       try {
-        const resStatus = await fetch('/api/status');
+        const resStatus = await secureFetch('/api/status');
         const dataStatus = await resStatus.json();
         if (_mounted) setBotStatus(dataStatus.status);
 
-        const resOffers = await fetch('/api/offers');
+        const resOffers = await secureFetch('/api/offers');
         const dataOffers = await resOffers.json();
         if (_mounted) {
           setOffers(dataOffers);
@@ -88,7 +116,7 @@ export default function App() {
 
   const handleApprove = async (id: string) => {
     try {
-      const res = await fetch(`/api/offers/${id}/approve`, { method: 'POST' });
+      const res = await secureFetch(`/api/offers/${id}/approve`, { method: 'POST' });
       if (!res.ok) {
         const error = await res.json();
         alert('خطأ أثناء الموافقة: ' + error.error);
@@ -114,7 +142,7 @@ export default function App() {
 
   const submitReject = async (id: string) => {
     try {
-      const res = await fetch(`/api/offers/${id}/reject`, { 
+      const res = await secureFetch(`/api/offers/${id}/reject`, { 
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reason: rejectReason })
@@ -149,7 +177,7 @@ export default function App() {
 
   const submitEdit = async (id: string) => {
     try {
-      const res = await fetch(`/api/offers/${id}/update`, {
+      const res = await secureFetch(`/api/offers/${id}/update`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(editFormData)
