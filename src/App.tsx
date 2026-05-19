@@ -252,7 +252,7 @@ export default function App() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             style={{ rotateX, rotateY, transformStyle: 'preserve-3d', willChange: 'transform' }}
             transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
-            className="max-w-4xl w-full bg-[#110c1c]/95 md:rounded-[2rem] shadow-2xl shadow-purple-900/30 overflow-hidden md:border border-white/5 flex flex-col md:flex-row h-[100dvh] md:h-[85vh] relative md:ring-1 ring-inset ring-white/10"
+            className="max-w-6xl w-full bg-[#110c1c]/95 md:rounded-[2rem] shadow-2xl shadow-purple-900/30 overflow-hidden md:border border-white/5 flex flex-col md:flex-row h-[100dvh] md:h-[90vh] relative md:ring-1 ring-inset ring-white/10"
           >
         {/* Top gradient highlight */}
         <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-purple-400/50 to-transparent opacity-50 z-20" />
