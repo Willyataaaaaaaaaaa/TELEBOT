@@ -1,4 +1,5 @@
 import express from 'express';
+import compression from 'compression';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
@@ -43,6 +44,9 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = 3000;
+
+// Enable gzip compression for better performance on slow networks
+app.use(compression());
 
 // Middleware for parsing JSON requests in Express
 app.use(express.json());
@@ -93,7 +97,7 @@ function setupBot() {
     botStatus = 'Running';
 
     // 1. Setup Session
-    bot.use(session({ defaultSession: () => ({ step: 'IDLE' }) }));
+    bot.use(session({ defaultSession: (): SessionData => ({ step: 'IDLE' }) }));
 
     // 2. Middleware: Force join channel
     const checkMembership = async (ctx: MyContext, next: () => Promise<void>) => {
@@ -152,7 +156,7 @@ function setupBot() {
         reply_markup: {
           keyboard: [[{ text: 'تقديم طلب جديد 📝' }]],
           resize_keyboard: true,
-          persistent: true
+          is_persistent: true
         }
       });
     });

@@ -24,12 +24,12 @@ export default function App() {
   const smoothMouseY = useSpring(mouseY, springConfig);
   
   const rotateX = useTransform(smoothMouseY, y => {
-    if (typeof window === 'undefined') return 0;
+    if (typeof window === 'undefined' || window.innerWidth < 768) return 0;
     return ((y / window.innerHeight) - 0.5) * -6; // reduced rotation for better performance
   });
   
   const rotateY = useTransform(smoothMouseX, x => {
-    if (typeof window === 'undefined') return 0;
+    if (typeof window === 'undefined' || window.innerWidth < 768) return 0;
     return ((x / window.innerWidth) - 0.5) * 6;
   });
 
@@ -37,10 +37,39 @@ export default function App() {
   const mouseGlowY = useTransform(smoothMouseY, y => y - 300);
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setShowIntro(false);
-    }, 2500);
-    return () => clearTimeout(timer);
+    let _mounted = true;
+    const start = Date.now();
+    const fetchData = async () => {
+      try {
+        const resStatus = await fetch('/api/status');
+        const dataStatus = await resStatus.json();
+        if (_mounted) setBotStatus(dataStatus.status);
+
+        const resOffers = await fetch('/api/offers');
+        const dataOffers = await resOffers.json();
+        if (_mounted) {
+          setOffers(dataOffers);
+        }
+      } catch (e) {
+        if (_mounted) setBotStatus('Error contacting server');
+      } finally {
+        if (_mounted) {
+          const elapsed = Date.now() - start;
+          if (elapsed < 2000) {
+            setTimeout(() => { if (_mounted) setShowIntro(false); }, 2000 - elapsed);
+          } else {
+            setShowIntro(false);
+          }
+        }
+      }
+    };
+    
+    fetchData();
+    const interval = setInterval(fetchData, 5000); // 5 seconds interval limit
+    return () => {
+      _mounted = false;
+      clearInterval(interval);
+    };
   }, []);
 
   useEffect(() => {
@@ -56,26 +85,6 @@ export default function App() {
     setToast(message);
     setTimeout(() => setToast(null), 3000);
   };
-
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const resStatus = await fetch('/api/status');
-        const dataStatus = await resStatus.json();
-        setBotStatus(dataStatus.status);
-
-        const resOffers = await fetch('/api/offers');
-        const dataOffers = await resOffers.json();
-        setOffers(dataOffers);
-      } catch (e) {
-        setBotStatus('Error contacting server');
-      }
-    };
-    
-    fetchData();
-    const interval = setInterval(fetchData, 3000); // 3 seconds interval
-    return () => clearInterval(interval);
-  }, []);
 
   const handleApprove = async (id: string) => {
     try {
@@ -207,7 +216,7 @@ export default function App() {
               transition={{ delay: 0.4, duration: 0.6 }}
               className="text-4xl font-bold text-white tracking-tight"
             >
-              السيرفر الخاص
+              لوحة التحكم
             </motion.h1>
             <motion.div 
               initial={{ scaleX: 0 }}
@@ -256,7 +265,7 @@ export default function App() {
             <div className="p-4 bg-purple-900/40 rounded-full mb-4 ring-2 ring-purple-500/20 shadow-[0_0_15px_rgba(168,85,247,0.4)]">
               <Bot size={48} className="text-purple-300" />
             </div>
-            <h1 className="text-2xl font-bold tracking-tight mb-2 text-white">السيرفر الخاص</h1>
+            <h1 className="text-2xl font-bold tracking-tight mb-2 text-white">لوحة التحكم</h1>
             <p className="text-purple-300/80 font-medium text-sm mb-6">استقبال ومراجعة العروض الخاصة بالبوت</p>
 
             {/* Navigation Tabs */}
@@ -374,7 +383,7 @@ export default function App() {
                   }`}></div>
 
                   <div className="flex justify-between items-start mb-4">
-                    <div>
+                    <div className="flex items-center gap-3 flex-wrap">
                       <h3 className="font-bold text-purple-100 text-lg flex items-center gap-2">
                         {offer.username.startsWith('@') ? (
                            <a href={`https://t.me/${offer.username.replace('@', '')}`} target="_blank" rel="noopener noreferrer" className="hover:text-purple-300 transition-colors">
@@ -384,6 +393,10 @@ export default function App() {
                            offer.username
                         )}
                       </h3>
+                      <div className="flex items-center gap-1.5 px-2 py-1 bg-purple-900/30 rounded-md border border-purple-800/50 shadow-sm">
+                        <span className="text-purple-400 text-xs font-semibold">كود الطلب:</span>
+                        <span className="text-purple-200 font-mono text-xs font-bold tracking-wider">{offer.uniqueCode || (offer.id.split('_').pop() || offer.id)}</span>
+                      </div>
                     </div>
                     {/* Status Badge */}
                     <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium border ${
@@ -460,7 +473,6 @@ export default function App() {
                       </div>
 
                       <div className="mb-3 text-sm text-purple-100 flex flex-wrap gap-x-4 gap-y-1">
-                        <div><span className="text-purple-400/80">كود الطلب: </span> <span className="text-purple-300 font-mono text-xs">{offer.uniqueCode || (offer.id.split('_').pop() || offer.id)}</span></div>
                         <div><span className="text-purple-400/80">تاريخ التقديم:</span> <span className="text-purple-300 text-xs">{new Date(offer.createdAt).toLocaleString()}</span></div>
                       </div>
 
