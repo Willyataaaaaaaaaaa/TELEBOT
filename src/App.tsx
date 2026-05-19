@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ShieldAlert, Bot, CheckCircle2, AlertCircle, Clock, Check, X, Edit, History, InboxIcon, Save } from 'lucide-react';
+import { ShieldAlert, Bot, CheckCircle2, AlertCircle, Clock, Check, X, Edit, History, InboxIcon, Save, Bell } from 'lucide-react';
 import { motion, AnimatePresence, useMotionValue, useSpring, useTransform } from 'motion/react';
 import { encryptPayload, decryptPayload } from './crypto';
 
@@ -44,6 +44,8 @@ export default function App() {
   const [editFormData, setEditFormData] = useState<any>({});
   const [showIntro, setShowIntro] = useState(true);
 
+  const previousOffersRef = React.useRef<any[]>([]);
+
   const mouseX = useMotionValue(0);
   const mouseY = useMotionValue(0);
 
@@ -76,6 +78,22 @@ export default function App() {
         const resOffers = await secureFetch('/api/offers');
         const dataOffers = await resOffers.json();
         if (_mounted) {
+          if (previousOffersRef.current.length > 0) {
+            const oldIds = previousOffersRef.current.map((o: any) => o.id);
+            const newArrivals = dataOffers.filter((o: any) => o.status === 'pending' && !oldIds.includes(o.id));
+            if (newArrivals.length > 0) {
+              setToast(`🔔 تم استلام طلب جديد: ${newArrivals[0].uniqueCode || ''}`);
+              setTimeout(() => setToast(null), 5000);
+              
+              if (window.Notification && Notification.permission === 'granted') {
+                new Notification('طلب بيع جديد 🆕', { 
+                  body: `اللعبة: ${newArrivals[0].gameName}\nالسعر: ${newArrivals[0].price}`,
+                  icon: '/favicon.ico'
+                });
+              }
+            }
+          }
+          previousOffersRef.current = dataOffers;
           setOffers(dataOffers);
         }
       } catch (e) {
@@ -293,8 +311,8 @@ export default function App() {
             <div className="p-4 bg-purple-900/40 rounded-full mb-4 ring-2 ring-purple-500/20 shadow-[0_0_15px_rgba(168,85,247,0.4)]">
               <Bot size={48} className="text-purple-300" />
             </div>
-            <h1 className="text-2xl font-bold tracking-tight mb-2 text-white">لوحة التحكم</h1>
-            <p className="text-purple-300/80 font-medium text-sm mb-6">استقبال ومراجعة العروض الخاصة بالبوت</p>
+            <h1 className="text-2xl font-bold tracking-tight mb-2 text-white">لوحة تحكم الإدارة</h1>
+            <p className="text-purple-300/80 font-medium text-sm mb-6 max-w-[90%] mx-auto text-center">حصراً للإدارة. لتقديم الطلبات يرجى استخدام البوت.</p>
 
             {/* Navigation Tabs */}
             <div className="flex flex-col w-full gap-2 mb-6">
@@ -347,6 +365,21 @@ export default function App() {
                 </div>
               </motion.button>
             </div>
+
+            <button
+               onClick={() => {
+                 if (window.Notification && Notification.permission !== 'granted' && Notification.permission !== 'denied') {
+                   Notification.requestPermission().then(perm => {
+                     if (perm === 'granted') showToast('تم تفعيل الاشعارات 🔔');
+                   });
+                 } else if (window.Notification && Notification.permission === 'granted') {
+                   showToast('الاشعارات مفعلة مسبقاً ✨');
+                 }
+               }}
+               className="mb-4 flex items-center gap-2 cursor-pointer px-4 py-2 bg-purple-900/30 hover:bg-purple-800/40 rounded-full border border-purple-800/50 text-purple-300 transition-colors text-sm font-medium"
+            >
+               <Bell size={16} /> تفعيل الاشعارات
+            </button>
 
             <div className="mt-auto flex items-center gap-2 pt-4 border-t w-full justify-center border-purple-800/30">
               {botStatus === 'Running' ? (

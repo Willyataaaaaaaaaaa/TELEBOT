@@ -307,6 +307,24 @@ function setupBot() {
           offersData.unshift(newOffer);
 
           try {
+            // Notify admins in private
+            const adminMsg = `🆕 *تم تقديم عرض جديد!*\n` +
+                             `*كود الطلب:* \`${uniqueCode}\`\n` +
+                             `*اللعبة/الحساب:* ${gameName}\n` +
+                             `*السعر:* ${price}\n\n` +
+                             `يرجى مراجعة لوحة التحكم للتفاصيل.`;
+            
+            for (const adminId of adminIds) {
+              const targetId = typeof adminId === 'string' && adminId.startsWith('@') 
+                                ? resolvedAdmins.get(adminId) || adminId 
+                                : adminId;
+              try {
+                await bot.telegram.sendMessage(targetId, adminMsg, { parse_mode: 'Markdown' });
+              } catch (err) {
+                console.error(`Failed to notify admin ${adminId}:`, err);
+              }
+            }
+
             // Tell the user
             ctx.session.step = 'IDLE';
             await ctx.reply(`✅ تم إرسال معلوماتك بنجاح إلى الإدارة للمراجعة.\n\nكود طلبك: \`${uniqueCode}\`\n\nيرجى الانتظار، سيصلك إشعار عند الموافقة.`, {
