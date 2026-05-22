@@ -365,6 +365,9 @@ function setupBot() {
     // Launch bot with retry capability for 409 Conflict
     const startBot = async (retries = 5) => {
       try {
+        // Force delete any webhooks set by other platforms (like telehost bot)
+        await bot.telegram.deleteWebhook({ drop_pending_updates: true });
+        
         await bot.launch({ dropPendingUpdates: true });
         console.log("Telegram Bot started successfully!");
       } catch (err: any) {
