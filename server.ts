@@ -41,7 +41,7 @@ export let targetChannel = '';
 // ES module directory variables not needed as we use process.cwd()
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
 // Enable gzip compression for better performance on slow networks
 app.use(compression());
@@ -362,11 +362,36 @@ function setupBot() {
       console.error(`Bot error for ${ctx.updateType}:`, err);
     });
 
-    // Launch bot
-    bot.launch({ dropPendingUpdates: true }).catch((err) => {
-      console.error("Bot launch failed:", err.message);
-    });
-    console.log("Telegram Bot started!");
+    // Launch bot with retry capability for 409 Conflict
+    const startBot = async (retries = 5) => {
+      try {
+        await bot.launch({ dropPendingUpdates: true });
+        console.log("Telegram Bot started successfully!");
+      } catch (err: any) {
+        console.error("Bot launch failed:", err.message);
+        if (err.message.includes('409')) {
+          console.error(`
+=============================================================
+❌ ERROR 409 CONFLICT: ANOTHER BOT INSTANCE IS RUNNING!
+=============================================================
+Telegram only allows ONE server to connect to a bot at a time.
+This error means your bot is currently running somewhere else, such as:
+1. On a hosting platform you tried to use (Render, Glitch, etc.)
+2. On your local computer
+3. Multiple terminal tabs open
+
+To fix this: Please turn off the bot on those other platforms.
+=============================================================
+`);
+          if (retries > 0) {
+            console.log(`Retrying bot launch in 10 seconds... (${retries} retries left)`);
+            setTimeout(() => startBot(retries - 1), 10000);
+          }
+        }
+      }
+    };
+    
+    startBot();
     
     // Enable graceful stop
     process.once('SIGINT', () => bot.stop('SIGINT'));
